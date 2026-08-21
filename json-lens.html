@@ -1,0 +1,2349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>JSON Lens</title>
+<style>
+/* ── Tier 1: instrument palette ──────────────────────
+   Near-monochrome by design. Colour is information here, never decoration:
+   one electric accent reserved for the active/selected state, muted syntax
+   hues that stay separable without competing, and hairlines that measure. */
+:root{
+  --bg:#E8EAED; --surface:#FFFFFF; --surface-2:#F4F5F7; --surface-3:#E4E7EC;
+  --line:#D3D8DF; --line-soft:#E7EAEF; --guide:#E4E8EE; --hair:#C6CCD5;
+  --ink:#0E1116; --ink-2:#3D4650; --ink-3:#646D7A;
+  --accent:#0B44D0; --accent-ink:#FFFFFF; --accent-soft:#E4EBFF; --accent-line:#9FB8FF;
+  --key:#1F3D7A; --str:#0F6B4F; --num:#6D3A96; --bool:#0B6070; --nul:#66707D; --punct:#8A94A0;
+  --ok:#0B6B45; --warn:#7A5600; --err:#B3241B; --err-soft:#FBEAE8;
+  --mark:#FFE08A; --mark-ink:#4A3200;
+  --add-soft:#E6F4EC; --del-soft:#FBEAE8; --chg-soft:#FCF1DC;
+  --shadow-1:0 1px 0 rgba(14,17,22,.04);
+  --shadow-2:0 2px 4px rgba(14,17,22,.06), 0 16px 32px -18px rgba(14,17,22,.30);
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"JetBrains Mono","Cascadia Code",Consolas,"Liberation Mono",monospace;
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --step:19px;
+  --row-h:24px;
+  --tick:1px;
+  --radius:3px;
+  /* Three steps, 1.26 and 1.25 apart: chrome label, data, prose. */
+  --t-tag:9.5px;
+  --t-data:12px;
+  --t-prose:15px;
+  /* One authored motion curve. Mechanical, fast, no overshoot. */
+  --snap:90ms cubic-bezier(.2,0,0,1);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#08090B; --surface:#0E1013; --surface-2:#131619; --surface-3:#1B1F25;
+    --line:#22272D; --line-soft:#191D22; --guide:#1C2126; --hair:#2C333B;
+    --ink:#E8ECF1; --ink-2:#A6B0BC; --ink-3:#818C99;
+    --accent:#6E9DFF; --accent-ink:#04070D; --accent-soft:#0E1B33; --accent-line:#2B4B85;
+    --key:#7FA9F5; --str:#5FC08D; --num:#C08CE8; --bool:#4FBCD6; --nul:#7E8896; --punct:#5A6675;
+    --ok:#4ED18A; --warn:#E0B341; --err:#FF8079; --err-soft:#26100F;
+    --mark:#5A4416; --mark-ink:#FFE9BC;
+    --add-soft:#0F2318; --del-soft:#26100F; --chg-soft:#241D0E;
+    --shadow-1:0 1px 0 rgba(0,0,0,.5);
+    --shadow-2:0 2px 4px rgba(0,0,0,.5), 0 18px 36px -20px rgba(0,0,0,.9);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#08090B; --surface:#0E1013; --surface-2:#131619; --surface-3:#1B1F25;
+  --line:#22272D; --line-soft:#191D22; --guide:#1C2126; --hair:#2C333B;
+  --ink:#E8ECF1; --ink-2:#A6B0BC; --ink-3:#818C99;
+  --accent:#6E9DFF; --accent-ink:#04070D; --accent-soft:#0E1B33; --accent-line:#2B4B85;
+  --key:#7FA9F5; --str:#5FC08D; --num:#C08CE8; --bool:#4FBCD6; --nul:#7E8896; --punct:#5A6675;
+  --ok:#4ED18A; --warn:#E0B341; --err:#FF8079; --err-soft:#26100F;
+  --mark:#5A4416; --mark-ink:#FFE9BC;
+  --add-soft:#0F2318; --del-soft:#26100F; --chg-soft:#241D0E;
+  --shadow-1:0 1px 0 rgba(0,0,0,.5);
+  --shadow-2:0 2px 4px rgba(0,0,0,.5), 0 18px 36px -20px rgba(0,0,0,.9);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html{height:100%}
+body{
+  margin:0; height:100%; background:var(--bg); color:var(--ink);
+  font-family:var(--sans); font-size:var(--t-prose); line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  /* Every figure in this tool is a measurement; none of them may reflow
+     when a digit changes. */
+  font-variant-numeric:tabular-nums;
+}
+button,input,textarea,select{font:inherit;color:inherit;font-variant-numeric:inherit}
+/* Author `display` on .btn/.seg/.tab outranks the UA rule for [hidden], which
+   is how hidden controls kept rendering. One line settles it for all of them. */
+[hidden]{display:none !important}
+
+/* ── browser surfaces ────────────────────────────────
+   The parts the stylesheet does not draw still belong to the instrument. */
+::selection{background:var(--accent-soft);color:var(--ink)}
+textarea,input{caret-color:var(--accent)}
+:focus-visible{outline:1px solid var(--accent);outline-offset:2px;border-radius:var(--radius)}
+*{scrollbar-width:thin;scrollbar-color:var(--hair) transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{
+  background:var(--hair);border-radius:0;
+  border:3px solid transparent;background-clip:content-box;
+}
+::-webkit-scrollbar-thumb:hover{background:var(--ink-3);background-clip:content-box}
+::-webkit-scrollbar-corner{background:transparent}
+
+/* The instrument's own label voice: small, tracked-out, never sentence case. */
+.micro{
+  font-family:var(--mono);font-size:var(--t-tag);line-height:1;
+  text-transform:uppercase;letter-spacing:.16em;color:var(--ink-3);
+  white-space:nowrap;
+}
+
+/* ── shell ─────────────────────────────────────────── */
+.app{height:100dvh;display:flex;flex-direction:column;gap:0}
+
+.topbar{
+  display:flex;align-items:center;gap:16px;
+  padding:0 14px;height:46px;flex:0 0 auto;position:relative;
+  background:var(--surface);border-bottom:1px solid var(--line);
+}
+/* A measurement rule, not an ornament: ticks every 8px across the full
+   instrument width, the same cadence the gutter and the tree indent use. */
+.topbar::after{
+  content:"";position:absolute;left:0;right:0;bottom:0;height:3px;
+  background:repeating-linear-gradient(to right,var(--hair) 0 var(--tick),transparent var(--tick) 8px);
+  opacity:.5;pointer-events:none;
+}
+.mark{display:flex;align-items:center;gap:10px;min-width:0}
+.mark .glyph{
+  font-family:var(--mono);font-size:var(--t-data);font-weight:700;letter-spacing:-.02em;
+  color:var(--ink);border:1px solid var(--ink);
+  padding:2px 5px;border-radius:var(--radius);line-height:1;
+}
+.mark .name{
+  font-family:var(--mono);font-size:var(--t-data);font-weight:600;
+  text-transform:uppercase;letter-spacing:.18em;white-space:nowrap;
+}
+.mark .tag{
+  font-family:var(--mono);font-size:var(--t-tag);text-transform:uppercase;letter-spacing:.16em;
+  color:var(--ink-3);white-space:nowrap;
+  padding-left:10px;border-left:1px solid var(--line);
+}
+.topbar .spacer{flex:1 1 auto}
+.topbar-actions{display:flex;align-items:center;gap:6px}
+
+/* ── controls ──────────────────────────────────────── */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  height:26px;padding:0 9px;border-radius:var(--radius);
+  border:1px solid var(--line);background:var(--surface);color:var(--ink-2);
+  font-family:var(--mono);font-size:var(--t-tag);font-weight:500;white-space:nowrap;
+  text-transform:uppercase;letter-spacing:.13em;
+  transition:background var(--snap),color var(--snap),border-color var(--snap);
+}
+.btn:hover{background:var(--surface-3);color:var(--ink);border-color:var(--hair)}
+.btn[disabled]{opacity:.4;cursor:not-allowed}
+.btn.icon{width:26px;padding:0;justify-content:center}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.ghost:hover{background:var(--surface-3);border-color:transparent}
+/* Pressed is a state readout, so it reads as lit rather than as a new colour. */
+.btn[aria-pressed="true"]{
+  color:var(--accent);border-color:var(--accent-line);background:var(--accent-soft);
+}
+.btn.primary{
+  background:var(--ink);border-color:var(--ink);color:var(--surface);
+  font-weight:600;
+}
+.btn.primary:hover{background:var(--ink);border-color:var(--ink);color:var(--surface);opacity:.88}
+.btn kbd{
+  font-family:var(--mono);font-size:var(--t-tag);opacity:.7;letter-spacing:0;
+  border:1px solid currentColor;border-radius:2px;padding:0 3px;line-height:1.4;
+}
+.btn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+
+.seg{
+  display:inline-flex;border:1px solid var(--line);border-radius:var(--radius);
+  padding:1px;gap:1px;background:var(--surface);
+}
+.seg button{
+  height:20px;padding:0 8px;border:0;background:transparent;border-radius:1px;
+  font-family:var(--mono);font-size:var(--t-tag);color:var(--ink-3);
+  text-transform:uppercase;letter-spacing:.13em;
+  transition:background var(--snap),color var(--snap);
+}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+
+/* ── workspace ─────────────────────────────────────── */
+.workspace{
+  flex:1 1 auto;min-height:0;display:grid;
+  grid-template-columns:var(--split,50%) 7px minmax(0,1fr);
+  background:var(--bg);
+}
+.pane{
+  display:flex;flex-direction:column;min-width:0;min-height:0;
+  background:var(--surface);border:1px solid var(--line);
+  margin:8px;border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-1);
+}
+.pane.left{margin-right:0}
+.pane.right{margin-left:0}
+.pane-head{
+  display:flex;align-items:center;gap:10px;flex:0 0 auto;
+  height:32px;padding:0 6px 0 10px;
+  border-bottom:1px solid var(--line-soft);background:var(--surface-2);
+  /* The pane clips its overflow, so a toolbar wider than the pane would put
+     its last controls permanently out of reach. Scroll instead of hiding. */
+  overflow-x:auto;scrollbar-width:none;
+}
+.pane-head::-webkit-scrollbar{height:0}
+.pane-title{
+  font-family:var(--mono);font-size:var(--t-tag);text-transform:uppercase;letter-spacing:.16em;
+  color:var(--ink-3);white-space:nowrap;
+}
+/* The channel label — IN / OUT — is the one piece of chrome that never moves. */
+.pane-title.chan{
+  color:var(--ink-2);font-weight:600;
+  padding:2px 5px;border:1px solid var(--line);border-radius:var(--radius);
+}
+.pane-head .spacer{flex:1 1 auto}
+
+.splitter{cursor:col-resize;position:relative;background:transparent}
+.splitter::after{
+  content:"";position:absolute;inset:10px 3px;border-radius:0;
+  background:repeating-linear-gradient(to bottom,var(--hair) 0 var(--tick),transparent var(--tick) 4px);
+  transition:background var(--snap);
+}
+.splitter:hover::after,.splitter.dragging::after{
+  background:repeating-linear-gradient(to bottom,var(--accent) 0 var(--tick),transparent var(--tick) 4px);
+}
+
+/* ── editor ────────────────────────────────────────── */
+.editor{flex:1 1 auto;min-height:0;display:flex;position:relative;overflow:hidden}
+.gutter{
+  flex:0 0 auto;width:52px;padding:12px 9px 12px 0;overflow:hidden;
+  text-align:right;user-select:none;
+  font-family:var(--mono);font-size:var(--t-data);line-height:20px;
+  color:var(--ink-3);background:var(--surface-2);
+  border-right:1px solid var(--line);
+}
+/* Ruled like an instrument scale: every tenth line is the labelled graduation,
+   the rest are minor ticks. Reading "which line am I on" stops being a squint. */
+.gutter b{display:block;font-weight:400;opacity:.4;transition:opacity var(--snap)}
+.gutter b:nth-child(10n){opacity:.9;color:var(--ink-2)}
+.gutter b:nth-child(5n):not(:nth-child(10n)){opacity:.62}
+.gutter b.bad{color:var(--err);opacity:1;font-weight:700}
+.editor textarea{
+  flex:1 1 auto;min-width:0;border:0;background:transparent;resize:none;
+  padding:12px 14px;font-family:var(--mono);font-size:var(--t-data);line-height:20px;
+  color:var(--ink);tab-size:2;
+  /* wrap="off" + pre keeps one visual row per logical line, which is the only
+     way the fixed-line-height gutter beside it can stay aligned. */
+  white-space:pre;overflow-x:auto;
+}
+.editor textarea:focus{outline:none}
+.editor textarea::placeholder{color:var(--ink-3);opacity:.75}
+.editor textarea[hidden]{display:none}
+.editor.drag::after{
+  content:"DROP .JSON";position:absolute;inset:6px;border-radius:var(--radius);
+  border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);
+  display:grid;place-items:center;font-family:var(--mono);font-size:var(--t-tag);
+  letter-spacing:.24em;text-transform:uppercase;pointer-events:none;
+}
+
+.pane-foot{
+  flex:0 0 auto;display:flex;align-items:center;gap:10px;
+  padding:7px 8px;border-top:1px solid var(--line-soft);background:var(--surface-2);
+}
+.pane-foot .spacer{flex:1 1 auto}
+
+.notice{
+  flex:0 0 auto;display:none;gap:9px;align-items:flex-start;
+  padding:8px 10px;border-top:1px solid var(--line-soft);
+  font-family:var(--mono);font-size:var(--t-data);line-height:1.55;
+}
+.notice.show{display:flex}
+.notice.err{background:var(--err-soft);color:var(--err)}
+.notice.ok{background:var(--surface-2);color:var(--ok)}
+/* Square status lamp, not a bubble. */
+.notice .dot{flex:0 0 auto;width:5px;height:5px;border-radius:0;background:currentColor;margin-top:6px}
+.notice .body{min-width:0}
+.notice .snip{
+  display:block;margin-top:5px;white-space:pre;overflow-x:auto;
+  color:var(--ink-2);opacity:.9;
+}
+.notice button{
+  border:0;background:transparent;color:inherit;text-decoration:underline;
+  text-underline-offset:2px;padding:0;font-family:var(--mono);font-size:var(--t-data);
+}
+
+/* ── output ────────────────────────────────────────── */
+.tabs{display:inline-flex;gap:2px;align-items:center}
+.tab{
+  height:32px;padding:0 10px;border:0;background:transparent;position:relative;
+  font-family:var(--mono);font-size:var(--t-tag);letter-spacing:.16em;color:var(--ink-3);
+  text-transform:uppercase;transition:color var(--snap);
+}
+.tab:hover{color:var(--ink-2)}
+.tab[aria-selected="true"]{color:var(--ink)}
+.tab[aria-selected="true"]::after{
+  content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;
+  background:var(--accent);
+}
+.tab .count{
+  font-size:var(--t-tag);color:var(--ink-3);border:1px solid var(--line);border-radius:20px;
+  padding:0 5px;margin-left:6px;
+}
+
+.search{
+  display:flex;align-items:center;gap:6px;height:24px;padding:0 7px;
+  border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);
+  /* Gives up its width before any button does. */
+  flex:0 1 196px;min-width:62px;transition:border-color var(--snap);
+}
+.search:focus-within{border-color:var(--accent)}
+.search svg{width:12px;height:12px;stroke:var(--ink-3);fill:none;stroke-width:1.7}
+.search input{border:0;background:transparent;width:100%;min-width:0;font-family:var(--mono);font-size:var(--t-data)}
+.search input:focus{outline:none}
+.search input::placeholder{color:var(--ink-3);text-transform:uppercase;letter-spacing:.1em;font-size:var(--t-tag)}
+.search .hits{font-family:var(--mono);font-size:var(--t-tag);color:var(--ink-3);white-space:nowrap;letter-spacing:.08em}
+
+.view{flex:1 1 auto;min-height:0;overflow:auto;position:relative}
+.view[hidden]{display:none}
+
+/* tree */
+#tree{padding:8px 0 28px;font-family:var(--mono);font-size:var(--t-data);line-height:var(--row-h)}
+.row{
+  display:flex;align-items:center;gap:0;position:relative;
+  min-height:var(--row-h);padding-right:10px;
+  padding-left:calc(var(--d) * var(--step) + 10px);
+  background-image:repeating-linear-gradient(to right,var(--guide) 0 var(--tick),transparent var(--tick) var(--step));
+  background-repeat:no-repeat;
+  background-position:16px 0;
+  background-size:calc(var(--d) * var(--step)) 100%;
+  white-space:pre;
+  transition:background-color var(--snap);
+}
+.row:hover{background-color:var(--surface-2)}
+.row.hit{background-color:var(--accent-soft)}
+
+.twisty{
+  flex:0 0 auto;width:14px;height:14px;margin-right:4px;border:0;border-radius:1px;
+  background:transparent;color:var(--punct);display:grid;place-items:center;
+  transition:color var(--snap);
+}
+.twisty:hover{color:var(--accent)}
+.twisty svg{width:7px;height:7px;fill:currentColor;transition:transform var(--snap)}
+.twisty[aria-expanded="true"] svg{transform:rotate(90deg)}
+.twisty.leaf{visibility:hidden}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:1ms !important;animation-duration:1ms !important}
+}
+
+.k{color:var(--key)}
+/* Array indices are addresses, so they read as the ruler does. */
+.idx{color:var(--ink-3);font-size:var(--t-data)}
+.colon{color:var(--punct);margin-right:6px}
+.v-string{color:var(--str)}
+.v-number{color:var(--num)}
+.v-boolean{color:var(--bool);font-weight:600}
+.v-null{color:var(--nul);font-style:italic}
+.brace{color:var(--punct)}
+.meta{
+  color:var(--ink-3);font-size:var(--t-tag);margin-left:10px;
+  text-transform:uppercase;letter-spacing:.12em;
+}
+.preview{color:var(--ink-3);opacity:.8;margin-left:2px;max-width:46ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom}
+mark{background:var(--mark);color:var(--mark-ink);border-radius:2px;padding:0 1px}
+
+.acts{
+  margin-left:10px;display:inline-flex;gap:2px;opacity:0;
+  transition:opacity .12s ease;flex:0 0 auto;
+}
+.row:hover .acts,.row:focus-within .acts{opacity:1}
+.acts button{
+  border:1px solid var(--line);background:var(--surface);color:var(--ink-3);
+  border-radius:1px;
+  font-family:var(--mono);font-size:var(--t-tag);letter-spacing:.13em;text-transform:uppercase;
+  padding:1px 4px;line-height:1.5;
+  transition:color var(--snap),border-color var(--snap);
+}
+.acts button:hover{border-color:var(--accent);color:var(--accent)}
+.more{
+  margin-left:calc(var(--d) * var(--step) + 28px);margin-top:3px;
+  border:1px solid var(--line);background:transparent;color:var(--ink-3);
+  border-radius:var(--radius);padding:2px 9px;
+  font-family:var(--mono);font-size:var(--t-tag);text-transform:uppercase;letter-spacing:.12em;
+  transition:color var(--snap),border-color var(--snap);
+}
+.more:hover{border-color:var(--accent);color:var(--accent)}
+
+/* raw */
+#raw{margin:0;padding:12px 16px 28px;font-family:var(--mono);font-size:var(--t-data);line-height:20px;white-space:pre;overflow:visible}
+
+/* empty */
+.empty{
+  height:100%;display:grid;place-content:center;justify-items:center;gap:14px;
+  padding:30px;text-align:center;color:var(--ink-3);
+}
+.empty .art{
+  font-family:var(--mono);font-size:var(--t-data);line-height:1.7;color:var(--punct);
+  text-align:left;white-space:pre;border:1px solid var(--line);border-radius:var(--radius);
+  padding:14px 18px;background:var(--surface-2);
+}
+.empty h2{
+  margin:0;font-family:var(--mono);font-size:var(--t-tag);font-weight:600;color:var(--ink-2);
+  text-transform:uppercase;letter-spacing:.2em;
+}
+.empty ul{
+  margin:0;padding:0;list-style:none;display:grid;gap:7px;
+  font-family:var(--mono);font-size:var(--t-data);
+}
+.empty kbd{
+  font-family:var(--mono);font-size:var(--t-tag);border:1px solid var(--line);
+  border-radius:1px;padding:0 4px;color:var(--ink-2);background:var(--surface-2);
+}
+.empty em{font-style:normal;color:var(--ink-2)}
+
+/* ── status bar ────────────────────────────────────── */
+.statusbar{
+  flex:0 0 auto;display:flex;align-items:center;gap:14px;
+  height:28px;padding:0 12px;
+  background:var(--surface);border-top:1px solid var(--line);
+  font-family:var(--mono);font-size:var(--t-tag);color:var(--ink-3);
+  overflow:hidden;
+}
+/* PATH is a fixed field label; the expression beside it is the live value. */
+.statusbar::before{
+  content:"PATH";flex:0 0 auto;
+  font-size:var(--t-tag);letter-spacing:.16em;color:var(--ink-3);
+}
+.statusbar .path{
+  color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  flex:1 1 auto;min-width:0;border:0;background:transparent;text-align:left;
+  padding:0 0 0 2px;font-size:var(--t-data);transition:color var(--snap);
+}
+.statusbar .path:hover{color:var(--accent)}
+.stats{display:flex;gap:14px;flex:0 0 auto}
+.stats span{
+  display:inline-flex;align-items:baseline;gap:5px;
+  font-size:var(--t-tag);letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);
+}
+.stats span b{
+  color:var(--ink-2);font-weight:600;font-size:var(--t-data);letter-spacing:0;text-transform:none;
+}
+
+/* ── toast ─────────────────────────────────────────── */
+#toast{
+  position:fixed;left:50%;bottom:42px;transform:translate(-50%,6px);
+  background:var(--ink);color:var(--surface);border-radius:var(--radius);
+  padding:7px 12px;font-family:var(--mono);font-size:var(--t-data);letter-spacing:.04em;
+  box-shadow:var(--shadow-2);opacity:0;pointer-events:none;
+  transition:opacity 140ms cubic-bezier(.2,0,0,1),transform 140ms cubic-bezier(.2,0,0,1);
+  z-index:50;
+}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ── value chips & inferred hints ───────────────────── */
+/* A read-out tag: what the instrument determined this value actually is. */
+.chip{
+  flex:0 0 auto;margin-left:10px;padding:0 4px;border-radius:1px;
+  border:1px solid var(--line);background:transparent;color:var(--ink-3);
+  font-family:var(--mono);font-size:var(--t-tag);letter-spacing:.14em;text-transform:uppercase;
+  line-height:14px;
+}
+.chip.json{border-color:var(--accent);color:var(--accent)}
+.chip.warn{border-color:var(--warn);color:var(--warn)}
+.hint{
+  color:var(--ink-3);font-size:var(--t-tag);margin-left:10px;white-space:pre;
+  letter-spacing:.02em;
+}
+/* The hint is a derived reading, so it is tied to its chip by a tick. */
+.hint::before{content:"";display:inline-block;width:6px;border-top:1px solid var(--hair);vertical-align:middle;margin-right:6px}
+.swatch{
+  display:inline-block;width:9px;height:9px;border-radius:1px;margin-left:10px;
+  border:1px solid var(--hair);vertical-align:-1px;
+}
+a.link{color:var(--str);text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px}
+a.link:hover{color:var(--accent);text-decoration-color:var(--accent)}
+
+/* ── roving focus ───────────────────────────────────── */
+#tree:focus,#diff:focus{outline:none}
+/*
+ * The instrument's single moving part: a 2px accent rail that snaps to the
+ * active row, plus a hairline enclosure. Everything else in the tree is
+ * deliberately still, so this reads as the cursor of a machine.
+ */
+.row.active{
+  background-color:var(--surface-2);
+  box-shadow:inset 2px 0 0 var(--accent),inset 0 -1px 0 var(--hair),inset 0 1px 0 var(--hair);
+}
+.row.active .acts{opacity:1}
+#tree:focus-visible .row.active,#diff:focus-visible .row.active{
+  box-shadow:inset 2px 0 0 var(--accent),inset 0 0 0 1px var(--accent-line);
+}
+.row.cur-hit{background-color:var(--mark);color:var(--mark-ink)}
+
+/* ── diff ───────────────────────────────────────────── */
+.dmark{
+  flex:0 0 auto;width:12px;text-align:center;margin-right:4px;
+  color:var(--ink-3);font-weight:700;
+}
+.row.d-add{background-color:var(--add-soft)}
+.row.d-del{background-color:var(--del-soft)}
+.row.d-chg{background-color:var(--chg-soft)}
+.row.d-add .dmark{color:var(--ok)}
+.row.d-del .dmark{color:var(--err)}
+.row.d-chg .dmark{color:var(--warn)}
+.was{color:var(--err);text-decoration:line-through;opacity:.75;margin-right:6px}
+.now{color:var(--ok)}
+.dcount{display:flex;gap:8px;flex:0 0 auto;font-size:var(--t-data);align-items:baseline}
+.dcount b{font-weight:600}
+.dcount .p{color:var(--ok)}
+.dcount .m{color:var(--err)}
+.dcount .t{color:var(--warn)}
+
+/* ── shortcuts sheet ────────────────────────────────── */
+#keys{
+  border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;
+  background:var(--surface);color:var(--ink);box-shadow:var(--shadow-2);
+  max-width:520px;width:calc(100vw - 40px);
+}
+#keys::backdrop{background:rgb(0 0 0 / .5)}
+#keys h2{
+  margin:0 0 16px;font-family:var(--mono);font-size:var(--t-tag);font-weight:600;
+  text-transform:uppercase;letter-spacing:.2em;color:var(--ink-2);
+  padding-bottom:10px;border-bottom:1px solid var(--line);
+}
+#keys .grid{
+  display:grid;grid-template-columns:auto 1fr;gap:6px 18px;align-items:baseline;
+  font-family:var(--mono);font-size:var(--t-data);margin-bottom:16px;
+}
+#keys .grid dt{
+  font-size:var(--t-tag);color:var(--ink-2);white-space:nowrap;
+  border:1px solid var(--line);border-radius:1px;padding:1px 5px;justify-self:start;
+}
+#keys .grid dd{margin:0;color:var(--ink-3)}
+#keys .grid .sec{
+  grid-column:1/-1;font-size:var(--t-tag);text-transform:uppercase;
+  letter-spacing:.2em;color:var(--ink-3);margin-top:12px;
+  padding-bottom:5px;border-bottom:1px solid var(--line-soft);
+}
+#keys .grid .sec:first-child{margin-top:0}
+
+/* ── toast action ───────────────────────────────────── */
+#toast{display:flex;align-items:center;gap:10px}
+#toast button{
+  border:1px solid currentColor;border-radius:1px;padding:1px 6px;
+  background:transparent;color:inherit;
+  font-family:var(--mono);font-size:var(--t-tag);text-transform:uppercase;letter-spacing:.14em;
+  transition:background var(--snap),color var(--snap);
+}
+#toast button:hover{background:var(--surface);color:var(--ink)}
+
+@media (max-width:820px){
+  .workspace{grid-template-columns:1fr;grid-template-rows:minmax(150px,34%) minmax(0,1fr)}
+  .splitter{display:none}
+  .pane{margin:8px}
+  .pane.left{grid-row:1;margin-bottom:0}
+  .pane.right{grid-row:2;margin-top:8px;margin-left:8px}
+  .mark .tag{display:none}
+  /* The readout is a strip of fields; on a narrow screen it scrolls rather
+     than dropping the figures on the right. */
+  .statusbar{overflow-x:auto;gap:10px}
+  .statusbar .path{flex:0 1 auto}
+  .stats{gap:10px}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <div class="mark">
+      <span class="glyph">{ }</span>
+      <span class="name">JSON Lens</span>
+      <span class="tag">beautify · unwrap · explore</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="topbar-actions">
+      <button class="btn ghost" id="sample">Load sample</button>
+      <button class="btn ghost" id="share" title="Copy a link that carries this payload in the URL fragment">Share</button>
+      <button class="btn ghost" id="clear">Clear</button>
+      <button class="btn icon ghost" id="theme" aria-label="Toggle colour theme" title="Toggle colour theme">
+        <svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="workspace" id="workspace">
+    <!-- INPUT -->
+    <section class="pane left">
+      <div class="pane-head">
+        <span class="pane-title chan">IN</span>
+        <div class="seg" id="sideSeg" role="group" aria-label="Compare side" hidden>
+          <button data-side="a" aria-pressed="true">A</button>
+          <button data-side="b" aria-pressed="false">B</button>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn ghost" id="compare" aria-pressed="false" title="Compare two payloads">Compare</button>
+        <span class="pane-title" id="inputMeta">empty</span>
+      </div>
+
+      <div class="editor" id="editor">
+        <div class="gutter" id="gutter" aria-hidden="true"><b>1</b></div>
+        <textarea id="input" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off"
+          aria-label="JSON input"
+          placeholder='Paste JSON, or a stringified JSON blob — e.g.&#10;&#10;{"order":{"id":"SR-2291","paid":true}}&#10;&#10;"{\"order\":{\"id\":\"SR-2291\"}}"&#10;&#10;…both work. Drop a .json file here too.'></textarea>
+        <textarea id="inputB" wrap="off" spellcheck="false" autocomplete="off" autocapitalize="off" hidden
+          aria-label="JSON input, side B"
+          placeholder='Side B — paste the payload to compare against A.'></textarea>
+      </div>
+
+      <div class="notice" id="notice" role="status" aria-live="polite">
+        <span class="dot"></span>
+        <span class="body"><span id="noticeText"></span><code class="snip" id="noticeSnip"></code></span>
+      </div>
+
+      <div class="pane-foot">
+        <button class="btn primary" id="beautify">
+          <svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg>
+          Beautify <kbd>⌘⏎</kbd>
+        </button>
+        <div class="spacer"></div>
+        <div class="seg" role="group" aria-label="Indent width">
+          <button data-indent="2" aria-pressed="true">2</button>
+          <button data-indent="4" aria-pressed="false">4</button>
+          <button data-indent="tab" aria-pressed="false">TAB</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="Resize panes" tabindex="0"></div>
+
+    <!-- OUTPUT -->
+    <section class="pane right">
+      <div class="pane-head">
+        <span class="pane-title chan">OUT</span>
+        <div class="tabs" role="tablist" aria-label="Output view">
+          <button class="tab" role="tab" id="tabTree" aria-selected="true" aria-controls="viewTree">TREE</button>
+          <button class="tab" role="tab" id="tabRaw" aria-selected="false" aria-controls="viewRaw">FORMATTED</button>
+          <button class="tab" role="tab" id="tabDiff" aria-selected="false" aria-controls="viewDiff" hidden>DIFF</button>
+        </div>
+        <div class="spacer"></div>
+
+        <label class="search" id="searchWrap">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6" stroke-linecap="round"/></svg>
+          <input id="search" type="search" placeholder="Filter" aria-label="Filter tree">
+          <span class="hits" id="hits"></span>
+        </label>
+
+        <button class="btn icon ghost" id="expandAll" title="Expand all" aria-label="Expand all">
+          <svg viewBox="0 0 24 24"><path d="M8 9l4-4 4 4M8 15l4 4 4-4"/></svg>
+        </button>
+        <button class="btn icon ghost" id="collapseAll" title="Collapse to top level" aria-label="Collapse to top level">
+          <svg viewBox="0 0 24 24"><path d="M8 5l4 4 4-4M8 19l4-4 4 4"/></svg>
+        </button>
+        <button class="btn ghost" id="unwrap" aria-pressed="true" title="Expand JSON hiding inside string values">Unwrap</button>
+        <button class="btn ghost" id="values" aria-pressed="true" title="Annotate dates, URLs, UUIDs, JWTs and base64">Values</button>
+        <button class="btn ghost" id="onlyDiff" aria-pressed="false" title="Show only changed rows" hidden>Changes only</button>
+        <button class="btn ghost" id="copyOut" title="Copy formatted JSON">Copy</button>
+        <button class="btn ghost" id="minify" title="Replace the input with minified JSON">Minify</button>
+      </div>
+
+      <div class="view" id="viewTree" role="tabpanel" aria-labelledby="tabTree">
+        <div class="empty" id="emptyState">
+          <div class="art">{
+  "paste"   : "either shape",
+  "raw"     : { "works": true },
+  "wrapped" : "{\"also\":\"works\"}",
+  "depth"   : [ 1, [ 2, [ 3 ] ] ]
+}</div>
+          <h2>Nothing parsed yet</h2>
+          <ul>
+            <li>Paste on the left — it auto-formats</li>
+            <li><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Enter</kbd> to beautify · <kbd>⌘K</kbd> to filter</li>
+            <li>Stringified JSON unwraps — at the root <em>and</em> inside any value</li>
+            <li>Arrow keys walk the tree · <kbd>?</kbd> for all shortcuts</li>
+          </ul>
+        </div>
+        <div id="tree" role="tree" aria-label="JSON tree" tabindex="0"></div>
+      </div>
+
+      <pre class="view" id="viewRaw" role="tabpanel" aria-labelledby="tabRaw" hidden><code id="raw"></code></pre>
+
+      <div class="view" id="viewDiff" role="tabpanel" aria-labelledby="tabDiff" hidden>
+        <div id="diff" role="tree" aria-label="Difference tree" tabindex="0"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <button class="path" id="pathBar" title="Click to copy this path">$</button>
+    <div class="dcount" id="dcount"></div>
+    <div class="stats" id="stats"></div>
+  </footer>
+</div>
+
+<dialog id="keys">
+  <h2>Keyboard</h2>
+  <div class="grid" id="keysGrid"></div>
+  <button class="btn ghost" id="keysClose">Close</button>
+</dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const el = {
+    input:$("input"), inputB:$("inputB"), gutter:$("gutter"), editor:$("editor"), inputMeta:$("inputMeta"),
+    notice:$("notice"), noticeText:$("noticeText"), noticeSnip:$("noticeSnip"),
+    tree:$("tree"), diff:$("diff"), raw:$("raw"), empty:$("emptyState"),
+    viewTree:$("viewTree"), viewRaw:$("viewRaw"), viewDiff:$("viewDiff"),
+    tabTree:$("tabTree"), tabRaw:$("tabRaw"), tabDiff:$("tabDiff"),
+    search:$("search"), hits:$("hits"), stats:$("stats"), dcount:$("dcount"), pathBar:$("pathBar"),
+    toast:$("toast"), splitter:$("splitter"), workspace:$("workspace"),
+    sideSeg:$("sideSeg"), compare:$("compare"), unwrap:$("unwrap"), values:$("values"),
+    onlyDiff:$("onlyDiff"), share:$("share"), keys:$("keys"), keysGrid:$("keysGrid"),
+  };
+
+  const state = {
+    value:undefined, parsed:false, indent:2,
+    expanded:new Set(["$"]), filter:"", active:null, hitIndex:-1,
+    unwrap:true, infer:true,
+    side:"a", compare:false, onlyDiff:false,
+    view:"tree", rawDirty:true, freshDoc:true, split:50,
+    textB:"", embedded:0,
+  };
+
+  const CHUNK = 200;
+  const MAX_DEPTH = 160;
+  const MAX_UNWRAP = 8;
+  const EMBED_MAX = 4_000_000;
+  const NODE_CEILING = 20000;
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+
+  /* ── parsing ─────────────────────────────────────── */
+
+  const typeOf = (v) =>
+    v === null ? "null" : Array.isArray(v) ? "array" : typeof v;
+
+  const isContainer = (v) => { const t = typeOf(v); return t === "object" || t === "array"; };
+
+  const looksLikeJson = (s) => /^\s*[[{]/.test(s) && /[\]}]\s*$/.test(s);
+
+  const tryParse = (text) => {
+    try { return { ok:true, value:JSON.parse(text) }; }
+    catch (error) { return { ok:false, error }; }
+  };
+
+  const stripFence = (text) =>
+    text.replace(/^```(?:json|js)?\s*/i, "").replace(/\s*```$/, "").trim();
+
+  const dropTrailingCommas = (text) =>
+    text.replace(/,(\s*[}\]])/g, "$1");
+
+  const singleToDoubleQuotes = (text) =>
+    text.includes('"') ? text : text.replace(/'/g, '"');
+
+  const ESCAPES = { '"':'"', "\\":"\\", "/":"/", b:"\b", f:"\f", n:"\n", r:"\r", t:"\t" };
+
+  /*
+   * One left-to-right scan, not two global replaces. The two-pass version
+   * mangled `\\uXXXX`: the \u regex matched starting at the second backslash
+   * and turned an escaped backslash plus literal text into a control char.
+   */
+  const unescapeOnce = (text) => {
+    let out = "", i = 0;
+    while (i < text.length) {
+      if (text[i] !== "\\" || i + 1 >= text.length) { out += text[i++]; continue; }
+      const c = text[i + 1];
+      if (c === "u" && /^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) {
+        out += String.fromCharCode(parseInt(text.slice(i + 2, i + 6), 16));
+        i += 6;
+      } else if (c in ESCAPES) { out += ESCAPES[c]; i += 2; }
+      else { out += text[i++]; }
+    }
+    return out;
+  };
+
+  const REPAIRS = [
+    { name:"fence",    fn:stripFence },
+    { name:"comma",    fn:dropTrailingCommas },
+    { name:"quotes",   fn:singleToDoubleQuotes },
+    { name:"unescape", fn:unescapeOnce },
+  ];
+
+  /*
+   * Parses a payload that may be plain JSON, escaped JSON, or JSON nested
+   * inside a JSON string any number of levels deep.
+   *
+   * `lastGood` is what keeps valid input from being reported invalid:
+   * `looksLikeJson` only tests the first and last bracket, so the perfectly
+   * valid document `"[ERROR] oops {here}"` used to be unwrapped into garbage
+   * and then reported as a syntax error. We now remember every successful
+   * parse and fall back to it when the speculative unwrap dead-ends.
+   *
+   * The repair list is deliberately NOT blacklisted across iterations either —
+   * `out !== text` is already a no-progress guard, and blacklisting meant a
+   * doubly-escaped payload (the tool's whole reason to exist) could only ever
+   * be un-escaped once.
+   */
+  const parseSmart = (raw) => {
+    let text = raw.replace(/^﻿/, "").trim();
+    if (!text) return { ok:false, empty:true };
+
+    const applied = [];
+    let unwraps = 0, guard = 0, lastGood = null;
+
+    while (guard++ < 40) {
+      const attempt = tryParse(text);
+
+      if (attempt.ok) {
+        lastGood = { ok:true, value:attempt.value, unwraps, applied:[...applied], source:text };
+        if (typeof attempt.value === "string" && looksLikeJson(attempt.value)) {
+          text = attempt.value.trim();
+          unwraps++;
+          continue;
+        }
+        return lastGood;
+      }
+
+      const repair = REPAIRS.map(r => ({ ...r, out:r.fn(text) })).find(r => r.out !== text);
+      if (!repair) return lastGood || { ok:false, error:attempt.error, text, applied, unwraps };
+
+      if (!applied.includes(repair.name)) applied.push(repair.name);
+      text = repair.out;
+    }
+    return lastGood || { ok:false, error:new Error("Input nests too deeply to unwrap."), text, applied, unwraps };
+  };
+
+  const locateError = (error, text) => {
+    const rich = /line (\d+) column (\d+)/.exec(error.message);
+    if (rich) return { line:+rich[1], col:+rich[2] };
+    const pos = /position (\d+)/.exec(error.message);
+    if (!pos) return null;
+    const before = text.slice(0, +pos[1]);
+    return { line:before.split("\n").length, col:+pos[1] - before.lastIndexOf("\n") };
+  };
+
+  /* ── unwrapping values ───────────────────────────── */
+
+  const bytesFromBinary = (bin) => Uint8Array.from(bin, (c) => c.charCodeAt(0));
+
+  const decodeB64Url = (seg) => {
+    const padded = seg.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (seg.length % 4)) % 4);
+    return new TextDecoder().decode(bytesFromBinary(atob(padded)));
+  };
+
+  const B64URL_SEG = /^[A-Za-z0-9_-]+$/;
+
+  const jwtOf = (s) => {
+    const parts = s.split(".");
+    if (parts.length !== 3) return null;
+    if (!B64URL_SEG.test(parts[0]) || !B64URL_SEG.test(parts[1])) return null;
+    try {
+      const header = JSON.parse(decodeB64Url(parts[0]));
+      const payload = JSON.parse(decodeB64Url(parts[1]));
+      if (typeOf(header) !== "object" || !header.alg) return null;
+      return { header, payload, signature:parts[2] };
+    } catch { return null; }
+  };
+
+  const base64Json = (s) => {
+    if (s.length < 8 || s.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(s)) return null;
+    try {
+      const text = new TextDecoder().decode(bytesFromBinary(atob(s)));
+      if (!looksLikeJson(text)) return null;
+      const r = tryParse(text);
+      return r.ok && isContainer(r.value) ? r.value : null;
+    } catch { return null; }
+  };
+
+  const UNWRAP_PATH = {
+    json:   (p) => `JSON.parse(${p})`,
+    base64: (p) => `JSON.parse(atob(${p}))`,
+    jwt:    (p) => `jwt(${p})`,
+  };
+
+  /* Recomputed per render; a string keyed Map is fine because it is dropped
+     wholesale each time rather than growing across documents. */
+  let unwrapMemo = new Map();
+
+  const unwrapOf = (s) => {
+    if (!state.unwrap || typeof s !== "string" || s.length < 2 || s.length > EMBED_MAX) return null;
+    if (unwrapMemo.has(s)) return unwrapMemo.get(s);
+
+    let out = null;
+    if (looksLikeJson(s)) {
+      const r = tryParse(s);
+      if (r.ok && isContainer(r.value)) out = { value:r.value, kind:"json" };
+    }
+    if (!out) {
+      const jwt = jwtOf(s);
+      if (jwt) out = { value:{ header:jwt.header, payload:jwt.payload, signature:jwt.signature }, kind:"jwt" };
+    }
+    if (!out) {
+      const decoded = base64Json(s);
+      if (decoded) out = { value:decoded, kind:"base64" };
+    }
+
+    unwrapMemo.set(s, out);
+    return out;
+  };
+
+  /** The container a row can expand into — its own, or one hiding in a string. */
+  const openable = (v) => {
+    if (isContainer(v)) return { value:v, kind:null };
+    return unwrapOf(v);
+  };
+
+  /* ── value inference ─────────────────────────────── */
+
+  const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const EMAILISH = /^[^\s@]+@[^\s@.]+\.[^\s@]{2,}$/;
+  const HEX_COLOUR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+  const URLISH = /^https?:\/\/\S+$/i;
+
+  const UNITS = [["year",31536e6],["month",2592e6],["day",864e5],["hour",36e5],["minute",6e4]];
+
+  const relTime = (ms) => {
+    const diff = ms - Date.now();
+    if (Math.abs(diff) < 6e4) return "just now";
+    const unit = UNITS.find(([, size]) => Math.abs(diff) >= size);
+    if (!unit) return "just now";
+    try {
+      return new Intl.RelativeTimeFormat(undefined, { numeric:"auto" })
+        .format(Math.round(diff / unit[1]), unit[0]);
+    } catch { return ""; }
+  };
+
+  const stampHint = (date) => {
+    const when = date.toLocaleString(undefined, {
+      day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit",
+    });
+    const rel = relTime(date.getTime());
+    return rel ? `${when} · ${rel}` : when;
+  };
+
+  const inferString = (s) => {
+    if (!state.infer) return null;
+    if (URLISH.test(s)) return { kind:"url", href:s };
+    if (ISO_DATE.test(s)) {
+      const d = new Date(s);
+      return Number.isNaN(d.getTime()) ? null : { kind:"date", hint:stampHint(d) };
+    }
+    if (UUID.test(s)) return { kind:"uuid" };
+    if (EMAILISH.test(s)) return { kind:"email" };
+    if (HEX_COLOUR.test(s)) return { kind:"colour", colour:s };
+    return null;
+  };
+
+  const inferNumber = (n) => {
+    if (!state.infer || !Number.isInteger(n)) return null;
+    if (n >= 1e12 && n <= 4e12) return { kind:"epoch ms", hint:stampHint(new Date(n)) };
+    if (n >= 1e9 && n <= 4e9) return { kind:"epoch s", hint:stampHint(new Date(n * 1000)) };
+    return null;
+  };
+
+  /* ── stats ───────────────────────────────────────── */
+
+  const measure = (root) => {
+    let nodes = 0, keys = 0, depth = 0;
+    const walk = (v, d) => {
+      nodes++; if (d > depth) depth = d;
+      if (d >= MAX_DEPTH) return;
+      const t = typeOf(v);
+      if (t === "object") { const ks = Object.keys(v); keys += ks.length; ks.forEach(k => walk(v[k], d + 1)); }
+      else if (t === "array") v.forEach(item => walk(item, d + 1));
+    };
+    walk(root, 0);
+    return { nodes, keys, depth };
+  };
+
+  /** How many string values are hiding a parseable document. */
+  const countEmbedded = (root) => {
+    let found = 0, seen = 0;
+    const walk = (v, d) => {
+      if (d >= MAX_DEPTH || ++seen > NODE_CEILING) return;
+      if (typeof v === "string") { if (unwrapOf(v)) found++; return; }
+      const t = typeOf(v);
+      if (t === "object") Object.values(v).forEach(c => walk(c, d + 1));
+      else if (t === "array") v.forEach(c => walk(c, d + 1));
+    };
+    walk(root, 0);
+    return found;
+  };
+
+  const formatBytes = (n) =>
+    n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(2) + " MB";
+
+  /* ── formatting ──────────────────────────────────── */
+
+  const indentArg = () => (state.indent === "tab" ? "\t" : state.indent);
+  const formatted = () => JSON.stringify(state.value, null, indentArg());
+
+  /* ── paths ───────────────────────────────────────── */
+
+  const SAFE_KEY = /^[A-Za-z_$][\w$]*$/;
+  const childPath = (parent, key, inArray) =>
+    inArray ? `${parent}[${key}]`
+            : SAFE_KEY.test(key) ? `${parent}.${key}` : `${parent}[${JSON.stringify(key)}]`;
+
+  const entriesOf = (v) =>
+    typeOf(v) === "array" ? v.map((item, i) => [i, item]) : Object.entries(v);
+
+  /** The expression children of `path` hang off, once any unwrap is applied. */
+  const baseFor = (path, kind) => (kind ? UNWRAP_PATH[kind](path) : path);
+
+  /* ── search ──────────────────────────────────────── */
+
+  const collectMatches = (root, query) => {
+    const needle = query.toLowerCase();
+    const visible = new Set(), matched = new Set();
+    let seen = 0;
+
+    const walk = (key, value, path, ancestors, d) => {
+      if (d >= MAX_DEPTH || ++seen > NODE_CEILING * 4) return;
+      const open = openable(value);
+      const keyHit = key !== null && String(key).toLowerCase().includes(needle);
+      const valHit = !open && String(value).toLowerCase().includes(needle);
+      if (keyHit || valHit) {
+        matched.add(path); visible.add(path);
+        ancestors.forEach(a => visible.add(a));
+      }
+      if (!open) return;
+      const next = [...ancestors, path];
+      const inArray = typeOf(open.value) === "array";
+      const base = baseFor(path, open.kind);
+      entriesOf(open.value).forEach(([k, v]) => walk(k, v, childPath(base, k, inArray), next, d + 1));
+    };
+    walk(null, root, "$", [], 0);
+    return { visible, matched };
+  };
+
+  /*
+   * `toLowerCase` is not length-preserving for every code point (U+0130 grows
+   * to two), so an index found in the lowered copy can address the wrong
+   * character of the original. Take the fast path only when both lengths
+   * survived; otherwise fall back to an exact match rather than mark the
+   * wrong span.
+   */
+  const findCI = (text, needle) => {
+    const lowText = text.toLowerCase(), lowNeedle = needle.toLowerCase();
+    if (lowText.length === text.length && lowNeedle.length === needle.length) {
+      const at = lowText.indexOf(lowNeedle);
+      return at < 0 ? null : { at, len:needle.length };
+    }
+    const at = text.indexOf(needle);
+    return at < 0 ? null : { at, len:needle.length };
+  };
+
+  const highlight = (node, text) => {
+    node.textContent = "";
+    const found = state.filter ? findCI(text, state.filter) : null;
+    if (!found) { node.textContent = text; return; }
+    const mark = document.createElement("mark");
+    mark.textContent = text.slice(found.at, found.at + found.len);
+    node.append(text.slice(0, found.at), mark, text.slice(found.at + found.len));
+  };
+
+  /* ── tree rendering ──────────────────────────────── */
+
+  const CARET = '<svg viewBox="0 0 10 10"><path d="M3 1l5 4-5 4z"/></svg>';
+
+  const scalarText = (v) => (typeOf(v) === "string" ? JSON.stringify(v) : String(v));
+
+  const previewOf = (value, entries) => {
+    const inArray = typeOf(value) === "array";
+    const parts = entries.slice(0, 4).map(([k, child]) => {
+      const shown = isContainer(child) ? (typeOf(child) === "array" ? "[…]" : "{…}") : scalarText(child);
+      return inArray ? shown : `${k}: ${shown}`;
+    });
+    const more = entries.length > 4 ? ", …" : "";
+    return (inArray ? "[ " : "{ ") + parts.join(", ") + more + (inArray ? " ]" : " }");
+  };
+
+  const sizeLabel = (value, entries) => {
+    const n = entries.length;
+    if (typeOf(value) === "array") return n === 1 ? "1 item" : `${n} items`;
+    return n === 1 ? "1 key" : `${n} keys`;
+  };
+
+  const addChip = (row, label, tone) => {
+    const chip = document.createElement("span");
+    chip.className = "chip" + (tone ? " " + tone : "");
+    chip.textContent = label;
+    row.appendChild(chip);
+    return chip;
+  };
+
+  const addHint = (row, text) => {
+    const hint = document.createElement("span");
+    hint.className = "hint";
+    hint.textContent = text;
+    row.appendChild(hint);
+  };
+
+  const makeActions = (path, value) => {
+    const wrap = document.createElement("span");
+    wrap.className = "acts";
+    const add = (label, title, text) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = label; b.title = title; b.tabIndex = -1;
+      b.addEventListener("click", (e) => { e.stopPropagation(); copy(text(), title); });
+      wrap.appendChild(b);
+    };
+    add("path", "Copy path", () => path);
+    add("value", "Copy value", () => isContainer(value) ? JSON.stringify(value, null, indentArg()) : String(value));
+    return wrap;
+  };
+
+  /** Renders the scalar half of a row: the value, plus whatever it really is. */
+  const paintScalar = (row, value) => {
+    const kind = typeOf(value);
+    const guess = kind === "string" ? inferString(value) : kind === "number" ? inferNumber(value) : null;
+
+    if (guess && guess.kind === "url") {
+      const link = document.createElement("a");
+      link.className = "v-string link";
+      link.href = value;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      highlight(link, scalarText(value));
+      link.addEventListener("click", (e) => e.stopPropagation());
+      row.appendChild(link);
+      addChip(row, "url");
+      return;
+    }
+
+    const span = document.createElement("span");
+    span.className = "v-" + kind;
+    highlight(span, scalarText(value));
+    row.appendChild(span);
+
+    if (guess) {
+      addChip(row, guess.kind);
+      if (guess.hint) addHint(row, guess.hint);
+      if (guess.colour) {
+        const swatch = document.createElement("span");
+        swatch.className = "swatch";
+        swatch.style.background = guess.colour;
+        row.appendChild(swatch);
+      }
+    } else if (kind === "string" && value.length > 24) {
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      meta.textContent = value.length + " chars";
+      row.appendChild(meta);
+    }
+  };
+
+  const buildRow = (key, value, path, depth, inArray, open) => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.setProperty("--d", depth);
+    row.setAttribute("role", "treeitem");
+    row.dataset.path = path;
+    row.tabIndex = -1;
+
+    const twisty = document.createElement("button");
+    twisty.type = "button";
+    twisty.className = "twisty" + (open ? "" : " leaf");
+    twisty.innerHTML = CARET;
+    twisty.tabIndex = -1;
+    twisty.setAttribute("aria-hidden", "true");
+    row.appendChild(twisty);
+
+    if (key !== null) {
+      const k = document.createElement("span");
+      k.className = inArray ? "idx" : "k";
+      highlight(k, inArray ? String(key) : JSON.stringify(String(key)));
+      row.appendChild(k);
+      const colon = document.createElement("span");
+      colon.className = "colon"; colon.textContent = ":";
+      row.appendChild(colon);
+    }
+
+    if (open) {
+      const entries = entriesOf(open.value);
+      const brace = document.createElement("span");
+      brace.className = "brace";
+      brace.textContent = typeOf(open.value) === "array" ? "[]" : "{}";
+      row.appendChild(brace);
+      if (open.kind) addChip(row, open.kind, "json");
+      const meta = document.createElement("span");
+      meta.className = "meta"; meta.textContent = sizeLabel(open.value, entries);
+      row.appendChild(meta);
+      const prev = document.createElement("span");
+      prev.className = "preview"; prev.textContent = entries.length ? previewOf(open.value, entries) : "";
+      row.appendChild(prev);
+    } else {
+      paintScalar(row, value);
+    }
+
+    row.appendChild(makeActions(path, value));
+    row.addEventListener("mouseenter", () => setPath(path));
+    return { row, twisty };
+  };
+
+  let groupSeq = 0;
+
+  const mountChildren = (host, open, path, depth, ctx) => {
+    host.textContent = "";
+    const inArray = typeOf(open.value) === "array";
+    const base = baseFor(path, open.kind);
+    const all = entriesOf(open.value).filter(([k]) => {
+      if (!ctx.filtering || ctx.forceAll) return true;
+      return ctx.visible.has(childPath(base, k, inArray));
+    });
+
+    const paint = (from) => {
+      const slice = all.slice(from, from + CHUNK);
+      slice.forEach(([k, child], i) => {
+        host.appendChild(renderNode(k, child, childPath(base, k, inArray), depth, inArray, ctx, {
+          pos:from + i + 1, size:all.length,
+        }));
+      });
+      if (from + CHUNK < all.length) {
+        const shown = from + CHUNK;
+        const more = document.createElement("button");
+        more.type = "button"; more.className = "more";
+        more.style.setProperty("--d", depth);
+        more.textContent = `Show ${Math.min(CHUNK, all.length - shown)} more (${shown} of ${all.length} shown)`;
+        more.addEventListener("click", () => { more.remove(); paint(shown); });
+        host.appendChild(more);
+      }
+    };
+    paint(0);
+  };
+
+  const renderNode = (key, value, path, depth, inArray, ctx, seat) => {
+    const frag = document.createDocumentFragment();
+    const raw = openable(value);
+    const beyond = raw && raw.kind && ctx.unwrapDepth >= MAX_UNWRAP;
+    const open = beyond ? null : raw;
+
+    const { row, twisty } = buildRow(key, value, path, depth, inArray, open);
+    if (beyond) addChip(row, "depth limit", "warn");
+    if (ctx.filtering && ctx.matched.has(path)) row.classList.add("hit");
+    row.setAttribute("aria-level", String(depth + 1));
+    if (seat) {
+      row.setAttribute("aria-posinset", String(seat.pos));
+      row.setAttribute("aria-setsize", String(seat.size));
+    }
+    frag.appendChild(row);
+
+    if (!open || entriesOf(open.value).length === 0 || depth >= MAX_DEPTH) {
+      twisty.classList.add("leaf");
+      return frag;
+    }
+
+    const group = document.createElement("div");
+    group.setAttribute("role", "group");
+    group.id = "g" + (++groupSeq);
+    /* The group is a SIBLING of its row (the row is a flex line whose indent is
+       CSS-driven), so the treeitem has to claim it explicitly or assistive tech
+       sees a flat list. */
+    row.setAttribute("aria-owns", group.id);
+
+    const childCtx = {
+      ...ctx,
+      forceAll: ctx.forceAll || (ctx.filtering && ctx.matched.has(path)),
+      unwrapDepth: ctx.unwrapDepth + (open.kind ? 1 : 0),
+    };
+    const isOpen = ctx.filtering ? true : state.expanded.has(path);
+    let mounted = false;
+
+    const setOpen = (next) => {
+      twisty.setAttribute("aria-expanded", String(next));
+      row.setAttribute("aria-expanded", String(next));
+      group.hidden = !next;
+      if (next && !mounted) { mountChildren(group, open, path, depth + 1, childCtx); mounted = true; }
+      if (!ctx.filtering) { next ? state.expanded.add(path) : state.expanded.delete(path); }
+    };
+
+    setOpen(isOpen);
+    twisty.addEventListener("click", (e) => { e.stopPropagation(); setOpen(group.hidden); });
+    row.addEventListener("click", () => {
+      /* A click that ends a text selection is someone copying a value, not
+         someone asking to collapse the container under their cursor. */
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      setActive(path, { focus:false, scroll:false });
+      setOpen(group.hidden);
+    });
+
+    frag.appendChild(group);
+    return frag;
+  };
+
+  const renderTree = () => {
+    const keepScroll = el.viewTree.scrollTop;
+    unwrapMemo = new Map();
+    groupSeq = 0;
+
+    const filtering = state.filter.length > 0;
+    const found = filtering ? collectMatches(state.value, state.filter) : null;
+
+    const ctx = {
+      filtering,
+      visible: found ? found.visible : null,
+      matched: found ? found.matched : new Set(),
+      forceAll: false,
+      unwrapDepth: 0,
+    };
+
+    el.tree.textContent = "";
+    if (filtering && found.matched.size === 0) {
+      const none = document.createElement("div");
+      none.className = "empty";
+      const h = document.createElement("h2");
+      h.textContent = `No match for “${state.filter}”`;
+      none.appendChild(h);
+      el.tree.appendChild(none);
+    } else {
+      el.tree.appendChild(renderNode(null, state.value, "$", 0, false, ctx, null));
+    }
+
+    state.hitIndex = -1;
+    updateHits();
+    el.viewTree.scrollTop = keepScroll;
+    restoreActive();
+  };
+
+  /* ── active row (roving tabindex) ────────────────── */
+
+  const rowsIn = (host) => [...host.querySelectorAll(".row")].filter(r => !r.closest("[hidden]"));
+  const visibleRows = () => rowsIn(state.view === "diff" ? el.diff : el.tree);
+
+  const rowFor = (path) => visibleRows().find(r => r.dataset.path === path) || null;
+
+  const setActive = (path, { focus = true, scroll = true } = {}) => {
+    const host = state.view === "diff" ? el.diff : el.tree;
+    host.querySelectorAll(".row.active").forEach(r => { r.classList.remove("active"); r.tabIndex = -1; });
+    const row = path === null ? null : rowFor(path);
+    state.active = row ? path : null;
+    if (!row) { host.tabIndex = 0; return; }
+    row.classList.add("active");
+    row.tabIndex = 0;
+    host.tabIndex = -1;
+    setPath(path);
+    if (scroll) row.scrollIntoView({ block:"nearest" });
+    if (focus) row.focus({ preventScroll:true });
+  };
+
+  /** Re-applies the active row after a re-render swapped the DOM out. */
+  const restoreActive = () => {
+    const host = state.view === "diff" ? el.diff : el.tree;
+    if (state.active && rowFor(state.active)) {
+      const wasInside = host.contains(document.activeElement);
+      setActive(state.active, { focus:wasInside, scroll:false });
+    } else {
+      state.active = null;
+      host.tabIndex = 0;
+    }
+  };
+
+  const moveActive = (delta) => {
+    const rows = visibleRows();
+    if (!rows.length) return;
+    const at = rows.findIndex(r => r.dataset.path === state.active);
+    const next = at < 0 ? (delta > 0 ? 0 : rows.length - 1)
+                        : Math.min(rows.length - 1, Math.max(0, at + delta));
+    setActive(rows[next].dataset.path);
+  };
+
+  const activeRow = () => (state.active ? rowFor(state.active) : null);
+
+  const toggleActive = (wantOpen) => {
+    const row = activeRow();
+    if (!row) return false;
+    const expanded = row.getAttribute("aria-expanded");
+    if (expanded === null) return false;
+    const isOpen = expanded === "true";
+    if (wantOpen === isOpen) return false;
+    row.click();
+    return true;
+  };
+
+  const parentOf = (path) => {
+    const rows = visibleRows();
+    const at = rows.findIndex(r => r.dataset.path === path);
+    if (at < 0) return null;
+    const level = +rows[at].getAttribute("aria-level");
+    for (let i = at - 1; i >= 0; i--) {
+      if (+rows[i].getAttribute("aria-level") < level) return rows[i].dataset.path;
+    }
+    return null;
+  };
+
+  let typeBuffer = "", typeTimer;
+  const typeAhead = (ch) => {
+    clearTimeout(typeTimer);
+    typeBuffer += ch.toLowerCase();
+    typeTimer = setTimeout(() => { typeBuffer = ""; }, 700);
+    const rows = visibleRows();
+    const from = Math.max(0, rows.findIndex(r => r.dataset.path === state.active));
+    const ordered = [...rows.slice(from + 1), ...rows.slice(0, from + 1)];
+    const hit = ordered.find(r => {
+      const label = r.querySelector(".k, .idx");
+      return label && label.textContent.replace(/^"|"$/g, "").toLowerCase().startsWith(typeBuffer);
+    });
+    if (hit) setActive(hit.dataset.path);
+  };
+
+  const onTreeKey = (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const key = e.key;
+
+    if (key === "ArrowDown") { e.preventDefault(); moveActive(1); return; }
+    if (key === "ArrowUp") { e.preventDefault(); moveActive(-1); return; }
+    if (key === "Home") { e.preventDefault(); const r = visibleRows(); if (r.length) setActive(r[0].dataset.path); return; }
+    if (key === "End") { e.preventDefault(); const r = visibleRows(); if (r.length) setActive(r[r.length - 1].dataset.path); return; }
+
+    if (key === "ArrowRight") {
+      e.preventDefault();
+      if (!toggleActive(true)) moveActive(1);
+      return;
+    }
+    if (key === "ArrowLeft") {
+      e.preventDefault();
+      if (!toggleActive(false)) {
+        const parent = parentOf(state.active);
+        if (parent) setActive(parent);
+      }
+      return;
+    }
+    if (key === "Enter" && state.filter) { e.preventDefault(); stepHit(e.shiftKey ? -1 : 1); return; }
+    if (key === "Enter" || key === " ") {
+      e.preventDefault();
+      const row = activeRow();
+      if (row) row.click();
+      return;
+    }
+    if (key === "c" && state.active) { e.preventDefault(); copy(state.active, "Path copied"); return; }
+    if (key.length === 1 && /[\w]/.test(key)) { e.preventDefault(); typeAhead(key); }
+  };
+
+  /* ── search hits ─────────────────────────────────── */
+
+  const hitRows = () => visibleRows().filter(r => r.classList.contains("hit"));
+
+  const updateHits = () => {
+    if (!state.filter) { el.hits.textContent = ""; return; }
+    const total = hitRows().length;
+    el.hits.textContent = state.hitIndex >= 0 && total
+      ? `${state.hitIndex + 1} / ${total}`
+      : `${total} hit${total === 1 ? "" : "s"}`;
+  };
+
+  const stepHit = (delta) => {
+    const rows = hitRows();
+    if (!rows.length) return;
+    state.hitIndex = (state.hitIndex + delta + rows.length) % rows.length;
+    rows.forEach(r => r.classList.remove("cur-hit"));
+    const row = rows[state.hitIndex];
+    row.classList.add("cur-hit");
+    setActive(row.dataset.path);
+    updateHits();
+  };
+
+  /* ── expansion helpers ───────────────────────────── */
+
+  const expandTo = (levels) => {
+    /* Seeded with the root: a document whose root is a scalar expands to
+       nothing, and an empty set would leave even the root row collapsed. */
+    const next = new Set(["$"]);
+    let seen = 0;
+    const walk = (v, path, d) => {
+      if (d >= levels || d >= MAX_DEPTH || ++seen > NODE_CEILING * 4) return;
+      const open = openable(v);
+      if (!open) return;
+      next.add(path);
+      const inArray = typeOf(open.value) === "array";
+      const base = baseFor(path, open.kind);
+      entriesOf(open.value).forEach(([k, child]) => walk(child, childPath(base, k, inArray), d + 1));
+    };
+    walk(state.value, "$", 0);
+    state.expanded = next;
+  };
+
+  /* ── output plumbing ─────────────────────────────── */
+
+  const setPath = (path) => { el.pathBar.textContent = path; };
+
+  const renderStats = () => {
+    const { nodes, keys, depth } = measure(state.value);
+    const bytes = new TextEncoder().encode(JSON.stringify(state.value)).length;
+    state.embedded = countEmbedded(state.value);
+    const rows = [
+      ["type", typeOf(state.value)],
+      ["nodes", nodes.toLocaleString()],
+      ["keys", keys.toLocaleString()],
+      ["depth", depth],
+      ["size", formatBytes(bytes)],
+    ];
+    if (state.embedded) rows.push(["embedded", state.embedded]);
+    el.stats.textContent = "";
+    rows.forEach(([k, v]) => {
+      const span = document.createElement("span");
+      const b = document.createElement("b");
+      b.textContent = String(v);
+      span.append(k + " ", b);
+      el.stats.appendChild(span);
+    });
+  };
+
+  /* The FORMATTED pane starts hidden and most sessions never open it, so a
+     full pretty-print per keystroke was pure waste. */
+  const renderRaw = () => {
+    if (!state.rawDirty) return;
+    el.raw.textContent = state.parsed ? formatted() : "";
+    state.rawDirty = false;
+  };
+
+  const showNotice = (kind, text, snippet) => {
+    el.notice.className = "notice show " + kind;
+    el.noticeText.textContent = text;
+    el.noticeSnip.textContent = snippet || "";
+    el.noticeSnip.style.display = snippet ? "block" : "none";
+  };
+  const hideNotice = () => { el.notice.className = "notice"; };
+
+  const markBadLine = (line) => {
+    [...el.gutter.children].forEach((b, i) => b.classList.toggle("bad", i + 1 === line));
+  };
+
+  const failure = (result) => {
+    state.parsed = false;
+    state.value = undefined;
+    state.rawDirty = true;
+    state.active = null;
+    el.empty.style.display = "";
+    el.tree.textContent = "";
+    el.raw.textContent = "";
+    el.stats.textContent = "";
+    el.hits.textContent = "";
+    setPath("$");
+
+    if (result.empty) { hideNotice(); markBadLine(-1); return; }
+
+    /*
+     * The offsets belong to `result.text` — whatever survived unwrapping and
+     * repair — not to what is in the editor. Showing the caret against the
+     * user's own lines was quietly pointing at the wrong character, so the
+     * snippet is drawn from the failing text and the gutter is only marked
+     * when the two are still the same string.
+     */
+    const transformed = (result.unwraps || 0) > 0 || (result.applied || []).length > 0;
+    const where = locateError(result.error, result.text);
+    const lines = result.text.split("\n");
+    const snippet = where && lines[where.line - 1] !== undefined
+      ? lines[where.line - 1].slice(0, 120) + "\n" + " ".repeat(Math.max(0, where.col - 1)) + "^"
+      : "";
+
+    const message = result.error.message
+      .replace(/^JSON\.parse:\s*/, "")
+      .replace(/^JSON Parse error:\s*/, "")
+      .replace(/\s*in JSON at position.*$/, "");
+
+    showNotice("err",
+      (where ? `Invalid JSON at line ${where.line}, column ${where.col} — ` : "Invalid JSON — ") +
+      message + (transformed ? " (position is in the unwrapped text)" : ""),
+      snippet);
+    markBadLine(transformed ? -1 : (where ? where.line : -1));
+  };
+
+  const REPAIR_NOTES = {
+    unescape:"un-escaped",
+    comma:"dropped trailing commas",
+    quotes:"converted every single quote in the document",
+    fence:"stripped code fence",
+  };
+
+  const success = (result) => {
+    state.value = result.value;
+    state.parsed = true;
+    state.rawDirty = true;
+    markBadLine(-1);
+    el.empty.style.display = "none";
+
+    if (state.freshDoc) {
+      expandTo(2);
+      state.active = null;
+      state.freshDoc = false;
+    }
+    state.expanded.add("$");
+
+    renderTree();
+    renderStats();
+    if (state.view === "raw") renderRaw();
+    if (!state.active) setPath("$");
+
+    const notes = [];
+    if (result.unwraps) notes.push(`unwrapped ${result.unwraps} string layer${result.unwraps === 1 ? "" : "s"}`);
+    result.applied.forEach(name => { if (REPAIR_NOTES[name]) notes.push(REPAIR_NOTES[name]); });
+    if (state.embedded) notes.push(`${state.embedded} embedded JSON string${state.embedded === 1 ? "" : "s"} expandable`);
+
+    notes.length ? showNotice("ok", "Parsed — " + notes.join(", ") + ".") : hideNotice();
+  };
+
+  const activeInput = () => (state.side === "b" ? el.inputB : el.input);
+
+  const run = () => {
+    const result = parseSmart(activeInput().value);
+    result.ok ? success(result) : failure(result);
+    if (state.compare) renderDiff();
+    save();
+  };
+
+  let runTimer;
+  const scheduleRun = () => { clearTimeout(runTimer); runTimer = setTimeout(run, 140); };
+
+  /* ── diff ────────────────────────────────────────── */
+
+  const deepSame = (a, b) => {
+    if (a === b) return true;
+    const ta = typeOf(a);
+    if (ta !== typeOf(b)) return false;
+    if (ta === "array") return a.length === b.length && a.every((x, i) => deepSame(x, b[i]));
+    if (ta === "object") {
+      const ka = Object.keys(a), kb = Object.keys(b);
+      return ka.length === kb.length && ka.every(k => k in b && deepSame(a[k], b[k]));
+    }
+    return false;
+  };
+
+  const ID_KEYS = ["id", "_id", "uuid", "key", "sku", "name"];
+
+  /** The field both arrays can be matched on, so a reorder is not a rewrite. */
+  const identityKey = (a, b) => {
+    const objects = (arr) => arr.length > 0 && arr.every(x => typeOf(x) === "object");
+    if (!objects(a) || !objects(b)) return null;
+    return ID_KEYS.find(k =>
+      a.every(x => k in x && !isContainer(x[k])) &&
+      b.every(x => k in x && !isContainer(x[k])) &&
+      new Set(a.map(x => String(x[k]))).size === a.length &&
+      new Set(b.map(x => String(x[k]))).size === b.length,
+    ) || null;
+  };
+
+  const MISSING = Symbol("missing");
+
+  const diffNode = (key, a, b, path, depth) => {
+    const status =
+      b === MISSING ? "removed" :
+      a === MISSING ? "added" :
+      deepSame(a, b) ? "same" : "changed";
+
+    const node = { key, path, a, b, status, children:null };
+    if (status !== "changed" || depth >= MAX_DEPTH) return node;
+
+    const t = typeOf(a);
+    if (t !== typeOf(b) || !isContainer(a)) return node;
+
+    node.children = t === "array"
+      ? diffArray(a, b, path, depth)
+      : diffObject(a, b, path, depth);
+    return node;
+  };
+
+  const diffObject = (a, b, path, depth) => {
+    const keys = [...Object.keys(a), ...Object.keys(b).filter(k => !(k in a))];
+    return keys.map(k => diffNode(
+      k,
+      k in a ? a[k] : MISSING,
+      k in b ? b[k] : MISSING,
+      childPath(path, k, false),
+      depth + 1,
+    ));
+  };
+
+  const diffArray = (a, b, path, depth) => {
+    const idKey = identityKey(a, b);
+    if (!idKey) {
+      const len = Math.max(a.length, b.length);
+      return Array.from({ length:len }, (_, i) => diffNode(
+        i,
+        i < a.length ? a[i] : MISSING,
+        i < b.length ? b[i] : MISSING,
+        childPath(path, i, true),
+        depth + 1,
+      ));
+    }
+    const byId = new Map(b.map(x => [String(x[idKey]), x]));
+    const seen = new Set();
+    const rows = a.map((x, i) => {
+      const id = String(x[idKey]);
+      seen.add(id);
+      return diffNode(id, x, byId.has(id) ? byId.get(id) : MISSING, childPath(path, i, true), depth + 1);
+    });
+    b.forEach((x, i) => {
+      const id = String(x[idKey]);
+      if (!seen.has(id)) rows.push(diffNode(id, MISSING, x, childPath(path, i, true), depth + 1));
+    });
+    return rows;
+  };
+
+  const tallyDiff = (node, counts = { added:0, removed:0, changed:0, same:0 }) => {
+    if (node.children) node.children.forEach(c => tallyDiff(c, counts));
+    else counts[node.status]++;
+    return counts;
+  };
+
+  const MARKS = { added:"+", removed:"−", changed:"~", same:"" };
+  const STATUS_CLASS = { added:"d-add", removed:"d-del", changed:"d-chg", same:"d-same" };
+
+  const diffRow = (node, depth) => {
+    const row = document.createElement("div");
+    row.className = "row " + STATUS_CLASS[node.status];
+    row.style.setProperty("--d", depth);
+    row.setAttribute("role", "treeitem");
+    row.setAttribute("aria-level", String(depth + 1));
+    row.dataset.path = node.path;
+    row.tabIndex = -1;
+
+    const twisty = document.createElement("button");
+    twisty.type = "button";
+    twisty.className = "twisty" + (node.children ? "" : " leaf");
+    twisty.innerHTML = CARET;
+    twisty.tabIndex = -1;
+    twisty.setAttribute("aria-hidden", "true");
+    row.appendChild(twisty);
+
+    const mark = document.createElement("span");
+    mark.className = "dmark";
+    mark.textContent = MARKS[node.status];
+    row.appendChild(mark);
+
+    if (node.key !== null) {
+      const k = document.createElement("span");
+      k.className = "k";
+      k.textContent = JSON.stringify(String(node.key));
+      row.appendChild(k);
+      const colon = document.createElement("span");
+      colon.className = "colon"; colon.textContent = ":";
+      row.appendChild(colon);
+    }
+
+    const shown = (v) => isContainer(v)
+      ? (typeOf(v) === "array" ? `[ ${v.length} ]` : `{ ${Object.keys(v).length} }`)
+      : scalarText(v);
+
+    if (node.status === "changed" && !node.children) {
+      const was = document.createElement("span");
+      was.className = "was"; was.textContent = shown(node.a);
+      const now = document.createElement("span");
+      now.className = "now"; now.textContent = shown(node.b);
+      row.append(was, now);
+    } else {
+      const v = document.createElement("span");
+      const value = node.b === MISSING ? node.a : node.b;
+      v.className = isContainer(value) ? "brace" : "v-" + typeOf(value);
+      v.textContent = shown(value);
+      row.appendChild(v);
+      if (node.children) {
+        const meta = document.createElement("span");
+        const t = tallyDiff(node);
+        meta.className = "meta";
+        meta.textContent = `+${t.added} −${t.removed} ~${t.changed}`;
+        row.appendChild(meta);
+      }
+    }
+
+    row.addEventListener("mouseenter", () => setPath(node.path));
+    return { row, twisty };
+  };
+
+  const mountDiff = (host, nodes, depth) => {
+    nodes
+      .filter(n => !(state.onlyDiff && n.status === "same"))
+      .forEach((node, i, all) => {
+        const { row, twisty } = diffRow(node, depth);
+        row.setAttribute("aria-posinset", String(i + 1));
+        row.setAttribute("aria-setsize", String(all.length));
+        host.appendChild(row);
+
+        if (!node.children) return;
+        const group = document.createElement("div");
+        group.setAttribute("role", "group");
+        group.id = "d" + (++groupSeq);
+        row.setAttribute("aria-owns", group.id);
+        let mounted = false;
+        const setOpen = (next) => {
+          twisty.setAttribute("aria-expanded", String(next));
+          row.setAttribute("aria-expanded", String(next));
+          group.hidden = !next;
+          if (next && !mounted) { mountDiff(group, node.children, depth + 1); mounted = true; }
+        };
+        setOpen(true);
+        twisty.addEventListener("click", (e) => { e.stopPropagation(); setOpen(group.hidden); });
+        row.addEventListener("click", () => {
+          const sel = window.getSelection();
+          if (sel && !sel.isCollapsed) return;
+          setOpen(group.hidden);
+        });
+        host.appendChild(group);
+      });
+  };
+
+  const renderDiff = () => {
+    unwrapMemo = new Map();
+    const left = parseSmart(el.input.value);
+    const right = parseSmart(el.inputB.value);
+    el.diff.textContent = "";
+    el.dcount.textContent = "";
+
+    if (!left.ok || !right.ok) {
+      const none = document.createElement("div");
+      none.className = "empty";
+      const h = document.createElement("h2");
+      h.textContent = !left.ok && !right.ok ? "Neither side parses yet"
+        : !left.ok ? "Side A does not parse yet" : "Side B does not parse yet";
+      none.appendChild(h);
+      el.diff.appendChild(none);
+      return;
+    }
+
+    const root = diffNode(null, left.value, right.value, "$", 0);
+    groupSeq = 0;
+    mountDiff(el.diff, [root], 0);
+
+    const t = tallyDiff(root);
+    const bit = (cls, label) => {
+      const span = document.createElement("span");
+      span.className = cls;
+      const b = document.createElement("b");
+      b.textContent = label;
+      span.appendChild(b);
+      return span;
+    };
+    el.dcount.append(
+      bit("p", `+${t.added}`), " ",
+      bit("m", `−${t.removed}`), " ",
+      bit("t", `~${t.changed}`), ` · ${t.same} same`,
+    );
+  };
+
+  /* ── input chrome ────────────────────────────────── */
+
+  const syncGutter = () => {
+    const input = activeInput();
+    const lines = input.value.split("\n").length;
+    const have = el.gutter.children.length;
+    if (lines > have) {
+      const frag = document.createDocumentFragment();
+      for (let i = have; i < lines; i++) {
+        const b = document.createElement("b"); b.textContent = i + 1; frag.appendChild(b);
+      }
+      el.gutter.appendChild(frag);
+    } else if (lines < have) {
+      for (let i = have; i > lines; i--) el.gutter.lastElementChild.remove();
+    }
+    el.gutter.scrollTop = input.scrollTop;
+
+    el.inputMeta.textContent = input.value.length
+      ? `${lines} ${lines === 1 ? "line" : "lines"} · ${formatBytes(new TextEncoder().encode(input.value).length)}`
+      : "empty";
+  };
+
+  /** Programmatic loads are a NEW document — that is what re-arms the default expansion. */
+  const setInput = (text, { format = true } = {}) => {
+    activeInput().value = text;
+    state.freshDoc = true;
+    syncGutter();
+    if (format) run(); else save();
+  };
+
+  /* ── clipboard + toast ───────────────────────────── */
+
+  let toastTimer;
+  const toast = (msg, action) => {
+    el.toast.textContent = msg;
+    if (action) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = action.label;
+      b.addEventListener("click", () => { el.toast.classList.remove("show"); action.run(); });
+      el.toast.appendChild(b);
+    }
+    el.toast.classList.add("show");
+    el.toast.style.pointerEvents = action ? "auto" : "none";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.toast.classList.remove("show"), action ? 7000 : 1600);
+  };
+
+  const copy = async (text, label) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast((label || "Copied") + " ✓");
+      return;
+    } catch { /* falls through to the legacy path below */ }
+
+    const restore = document.activeElement;
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch { ok = false; }
+    ta.remove();
+    if (restore && restore.focus) restore.focus();
+    toast(ok ? (label || "Copied") + " ✓" : "Could not copy — press " + (isMac ? "⌘C" : "Ctrl+C"));
+  };
+
+  /* ── tabs ────────────────────────────────────────── */
+
+  const showTab = (which) => {
+    state.view = which;
+    el.tabTree.setAttribute("aria-selected", String(which === "tree"));
+    el.tabRaw.setAttribute("aria-selected", String(which === "raw"));
+    el.tabDiff.setAttribute("aria-selected", String(which === "diff"));
+    el.viewTree.hidden = which !== "tree";
+    el.viewRaw.hidden = which !== "raw";
+    el.viewDiff.hidden = which !== "diff";
+    if (which === "raw") renderRaw();
+    if (which === "diff" && state.compare) renderDiff();
+    save();
+  };
+
+  /* ── persistence ─────────────────────────────────── */
+
+  const STORE_KEY = "json-lens:v1";
+  const MAX_STORED_INPUT = 1_000_000;
+  let saveTimer;
+
+  const save = () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      const text = el.input.value, textB = el.inputB.value;
+      const tooBig = text.length + textB.length > MAX_STORED_INPUT;
+      const record = {
+        v:1,
+        theme:document.documentElement.dataset.theme || null,
+        indent:state.indent, split:state.split,
+        unwrap:state.unwrap, infer:state.infer,
+        compare:state.compare, side:state.side, view:state.view,
+        expanded:tooBig ? [] : [...state.expanded].slice(0, 4000),
+        input:tooBig ? "" : text,
+        inputB:tooBig ? "" : textB,
+        dropped:tooBig,
+      };
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(record)); }
+      catch { /* private mode or quota — preferences simply do not persist */ }
+    }, 400);
+  };
+
+  const applySplit = (pct) => {
+    state.split = Math.min(72, Math.max(18, pct));
+    /* Only the custom property, never gridTemplateColumns: an inline template
+       would outrank the narrow-window media query for good, stranding the
+       layout in two columns with the splitter hidden. */
+    el.workspace.style.setProperty("--split", state.split + "%");
+    el.splitter.setAttribute("aria-valuenow", String(Math.round(state.split)));
+  };
+
+  const restore = () => {
+    let record = null;
+    try { record = JSON.parse(localStorage.getItem(STORE_KEY) || "null"); }
+    catch { record = null; }
+    if (!record || record.v !== 1) return null;
+
+    if (record.theme) document.documentElement.dataset.theme = record.theme;
+    if (record.indent !== undefined) setIndent(record.indent, { persist:false });
+    if (typeof record.split === "number") applySplit(record.split);
+    if (typeof record.unwrap === "boolean") setToggle("unwrap", record.unwrap, { render:false });
+    if (typeof record.infer === "boolean") setToggle("infer", record.infer, { render:false });
+
+    if (record.input) el.input.value = record.input;
+    if (record.inputB) el.inputB.value = record.inputB;
+    if (Array.isArray(record.expanded) && record.expanded.length) {
+      state.expanded = new Set(record.expanded);
+      state.freshDoc = false;
+    }
+    if (record.compare) setCompare(true, { persist:false });
+    return record;
+  };
+
+  const forget = () => {
+    try { localStorage.removeItem(STORE_KEY); } catch { /* nothing to clear */ }
+  };
+
+  /* ── share link ──────────────────────────────────── */
+
+  const bytesToB64 = (bytes) => {
+    let binary = "";
+    const STRIDE = 0x8000;
+    for (let i = 0; i < bytes.length; i += STRIDE) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + STRIDE));
+    }
+    return btoa(binary);
+  };
+
+  const toUrlSafe = (b64) => b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const fromUrlSafe = (s) =>
+    s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (s.length % 4)) % 4);
+
+  const deflate = async (text) => {
+    if (typeof CompressionStream === "undefined") return null;
+    try {
+      const stream = new Blob([new TextEncoder().encode(text)]).stream()
+        .pipeThrough(new CompressionStream("deflate-raw"));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    } catch { return null; }
+  };
+
+  const inflate = async (bytes) => {
+    const stream = new Blob([bytes]).stream()
+      .pipeThrough(new DecompressionStream("deflate-raw"));
+    return new Response(stream).text();
+  };
+
+  const buildShareUrl = async (text) => {
+    const packed = await deflate(text);
+    const body = packed
+      ? "z" + toUrlSafe(bytesToB64(packed))
+      : "p" + toUrlSafe(bytesToB64(new TextEncoder().encode(text)));
+    return location.origin + location.pathname + location.search + "#z=" + body;
+  };
+
+  const readShare = async (hash) => {
+    const match = /^#z=([zp])([A-Za-z0-9_-]+)$/.exec(hash);
+    if (!match) return null;
+    const bytes = bytesFromBinary(atob(fromUrlSafe(match[2])));
+    try {
+      return match[1] === "z" ? await inflate(bytes) : new TextDecoder().decode(bytes);
+    } catch { return null; }
+  };
+
+  /* ── toggles ─────────────────────────────────────── */
+
+  const TOGGLES = { unwrap:el.unwrap, infer:el.values };
+
+  const setToggle = (name, on, { render = true, persist = true } = {}) => {
+    state[name] = on;
+    TOGGLES[name].setAttribute("aria-pressed", String(on));
+    if (render && state.parsed) { renderTree(); renderStats(); }
+    if (persist) save();
+  };
+
+  const setIndent = (value, { persist = true } = {}) => {
+    state.indent = value === "tab" ? "tab" : Number(value);
+    document.querySelectorAll("[data-indent]").forEach(b =>
+      b.setAttribute("aria-pressed", String(b.dataset.indent === String(value))));
+    state.rawDirty = true;
+    if (state.view === "raw") renderRaw();
+    if (persist) save();
+  };
+
+  const setSide = (side) => {
+    state.side = side;
+    el.input.hidden = side !== "a";
+    el.inputB.hidden = side !== "b";
+    el.sideSeg.querySelectorAll("[data-side]").forEach(b =>
+      b.setAttribute("aria-pressed", String(b.dataset.side === side)));
+    state.freshDoc = true;
+    syncGutter();
+    run();
+  };
+
+  const setCompare = (on, { persist = true } = {}) => {
+    state.compare = on;
+    el.compare.setAttribute("aria-pressed", String(on));
+    el.sideSeg.hidden = !on;
+    el.tabDiff.hidden = !on;
+    el.onlyDiff.hidden = !on;
+    if (!on) {
+      setSide("a");
+      if (state.view === "diff") showTab("tree");
+    } else {
+      renderDiff();
+    }
+    if (persist) save();
+  };
+
+  /* ── shortcuts sheet ─────────────────────────────── */
+
+  const SHORTCUTS = [
+    ["Editor"],
+    ["⌘⏎", "Beautify now"],
+    ["⌘S", "Copy a share link"],
+    ["⌘K", "Focus the filter"],
+    ["Esc", "Clear the filter"],
+    ["Tree"],
+    ["↑ ↓", "Previous / next row"],
+    ["→", "Expand, then step into"],
+    ["←", "Collapse, then step out"],
+    ["Home / End", "First / last row"],
+    ["Enter / Space", "Toggle the row"],
+    ["A–Z", "Jump to a key by typing it"],
+    ["C", "Copy the active row's path"],
+    ["Filter"],
+    ["Enter", "Next match"],
+    ["⇧Enter", "Previous match"],
+    ["General"],
+    ["?", "This sheet"],
+  ];
+
+  const buildShortcuts = () => {
+    const list = document.createElement("dl");
+    list.className = "grid";
+    SHORTCUTS.forEach(([a, b]) => {
+      if (b === undefined) {
+        const head = document.createElement("div");
+        head.className = "sec"; head.textContent = a;
+        list.appendChild(head);
+        return;
+      }
+      const dt = document.createElement("dt");
+      dt.textContent = isMac ? a : a.replace("⌘", "Ctrl+").replace("⇧", "Shift+");
+      const dd = document.createElement("dd");
+      dd.textContent = b;
+      list.append(dt, dd);
+    });
+    el.keysGrid.replaceWith(list);
+    list.id = "keysGrid";
+    el.keysGrid = list;
+  };
+
+  /* ── wiring ──────────────────────────────────────── */
+
+  const onInput = () => {
+    syncGutter();
+    if (state.parsed || state.compare) scheduleRun(); else save();
+  };
+  el.input.addEventListener("input", onInput);
+  el.inputB.addEventListener("input", onInput);
+  [el.input, el.inputB].forEach(ta =>
+    ta.addEventListener("scroll", () => { el.gutter.scrollTop = ta.scrollTop; }));
+  /* `input` already fires on paste; this only covers the very first one, when
+     nothing has parsed yet and there is no debounce armed. */
+  [el.input, el.inputB].forEach(ta =>
+    ta.addEventListener("paste", () => {
+      state.freshDoc = true;
+      if (!state.parsed) setTimeout(run, 0);
+    }));
+
+  $("beautify").addEventListener("click", run);
+
+  $("clear").addEventListener("click", () => {
+    state.expanded = new Set(["$"]); state.filter = ""; el.search.value = "";
+    state.active = null; state.freshDoc = true;
+    setInput("", { format:false });
+    failure({ empty:true });
+    if (state.compare) renderDiff();
+    activeInput().focus();
+    save();
+  });
+
+  $("sample").addEventListener("click", () => {
+    const inner = {
+      order:{ id:"SR-88231", channel:"whatsapp", placed_at:"2026-08-19T11:04:22Z", paid:true, coupon:null,
+        total:{ currency:"INR", amount:2499.5, tax:381.28 },
+        items:[
+          { sku:"E360-TEE-M", name:"Engage Tee", qty:2, price:899 },
+          { sku:"E360-CAP", name:"Field Cap", qty:1, price:701.5, attributes:{ colour:"#c25e2a", size:"one" } }
+        ]
+      },
+      customer:{ id:"c_9f2a", email:"riya@example.com", segments:["high-intent","repeat"], reachable:{ whatsapp:true, sms:true, email:false } },
+      /* A value that is itself a stringified payload — the shape this tool
+         previously showed as one unreadable escaped line. */
+      webhook:JSON.stringify({ delivered_at:1787137462, ref:"3f8a5c12-9b41-4d7e-a2f0-6c1e8b4d9a33", callback:"https://api.example.com/hooks/e360" }),
+      events:[ { name:"cart_updated", at:"2026-08-19T10:58:00Z" }, { name:"checkout_started", at:"2026-08-19T11:02:41Z" } ]
+    };
+    state.expanded = new Set(["$"]);
+    setInput(JSON.stringify(JSON.stringify(inner)));
+    toast("Sample is a stringified payload — watch it unwrap, twice over");
+  });
+
+  document.querySelectorAll("[data-indent]").forEach(btn => {
+    btn.addEventListener("click", () => setIndent(btn.dataset.indent));
+  });
+
+  el.sideSeg.querySelectorAll("[data-side]").forEach(btn => {
+    btn.addEventListener("click", () => setSide(btn.dataset.side));
+  });
+
+  el.tabTree.addEventListener("click", () => showTab("tree"));
+  el.tabRaw.addEventListener("click", () => showTab("raw"));
+  el.tabDiff.addEventListener("click", () => showTab("diff"));
+
+  el.compare.addEventListener("click", () => setCompare(!state.compare));
+  el.unwrap.addEventListener("click", () => setToggle("unwrap", !state.unwrap));
+  el.values.addEventListener("click", () => setToggle("infer", !state.infer));
+  el.onlyDiff.addEventListener("click", () => {
+    state.onlyDiff = !state.onlyDiff;
+    el.onlyDiff.setAttribute("aria-pressed", String(state.onlyDiff));
+    renderDiff();
+  });
+
+  el.search.addEventListener("input", () => {
+    if (!state.parsed) return;
+    state.filter = el.search.value.trim();
+    showTab("tree");
+    renderTree();
+  });
+  el.search.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    stepHit(e.shiftKey ? -1 : 1);
+  });
+
+  el.tree.addEventListener("keydown", onTreeKey);
+  el.diff.addEventListener("keydown", onTreeKey);
+  el.tree.addEventListener("focus", () => { if (!state.active) moveActive(1); });
+
+  $("expandAll").addEventListener("click", () => {
+    if (!state.parsed) return;
+    const { nodes } = measure(state.value);
+    if (nodes > NODE_CEILING) { toast("Too large to expand fully (" + nodes.toLocaleString() + " nodes)"); return; }
+    expandTo(Infinity); renderTree();
+  });
+
+  $("collapseAll").addEventListener("click", () => {
+    if (!state.parsed) return;
+    state.expanded = new Set(["$"]); renderTree();
+  });
+
+  $("copyOut").addEventListener("click", () => {
+    if (!state.parsed) { toast("Nothing to copy yet"); return; }
+    copy(formatted(), "Formatted JSON copied");
+  });
+
+  $("minify").addEventListener("click", () => {
+    if (!state.parsed) { toast("Nothing to minify yet"); return; }
+    const before = activeInput().value;
+    setInput(JSON.stringify(state.value));
+    toast("Minified into the input", { label:"Undo", run:() => setInput(before) });
+  });
+
+  el.share.addEventListener("click", async () => {
+    const text = activeInput().value;
+    if (!text) { toast("Nothing to share yet"); return; }
+    const url = await buildShareUrl(text);
+    await copy(url, "Link copied");
+    if (url.length > 30000) toast("Link copied — it is long, some chat clients may truncate it");
+    else toast("Link copied — the payload rides in the URL fragment, never sent to a server");
+  });
+
+  el.pathBar.addEventListener("click", () => copy(el.pathBar.textContent, "Path copied"));
+
+  $("theme").addEventListener("click", () => {
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    const current = document.documentElement.dataset.theme || (dark ? "dark" : "light");
+    document.documentElement.dataset.theme = current === "dark" ? "light" : "dark";
+    save();
+  });
+
+  $("keysClose").addEventListener("click", () => el.keys.close());
+
+  /* file drop */
+  let dragDepth = 0;
+  el.editor.addEventListener("dragenter", (e) => {
+    e.preventDefault(); dragDepth++; el.editor.classList.add("drag");
+  });
+  el.editor.addEventListener("dragover", (e) => e.preventDefault());
+  el.editor.addEventListener("dragleave", () => {
+    /* dragleave fires on every child boundary, so count enters and leaves
+       rather than clearing on the first one. */
+    if (--dragDepth <= 0) { dragDepth = 0; el.editor.classList.remove("drag"); }
+  });
+  el.editor.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    dragDepth = 0;
+    el.editor.classList.remove("drag");
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    if (file.size > 32 * 1024 * 1024) { toast("That file is too large to open safely"); return; }
+    try {
+      const text = await file.text();
+      state.expanded = new Set(["$"]);
+      setInput(text);
+      toast(file.name + " loaded");
+    } catch { toast("Could not read " + file.name); }
+  });
+
+  /* split resize */
+  let dragging = false;
+  const splitFromX = (clientX) => {
+    const box = el.workspace.getBoundingClientRect();
+    applySplit(((clientX - box.left) / box.width) * 100);
+  };
+  const endDrag = () => { dragging = false; el.splitter.classList.remove("dragging"); save(); };
+  el.splitter.addEventListener("pointerdown", (e) => {
+    dragging = true; el.splitter.classList.add("dragging");
+    el.splitter.setPointerCapture(e.pointerId);
+  });
+  el.splitter.addEventListener("pointermove", (e) => { if (dragging) splitFromX(e.clientX); });
+  el.splitter.addEventListener("pointerup", endDrag);
+  el.splitter.addEventListener("pointercancel", endDrag);
+  el.splitter.addEventListener("keydown", (e) => {
+    const step = { ArrowLeft:-3, ArrowRight:3, Home:-100, End:100 }[e.key];
+    if (step === undefined) return;
+    e.preventDefault();
+    applySplit(state.split + step);
+    save();
+  });
+
+  /* shortcuts */
+  document.addEventListener("keydown", (e) => {
+    const cmd = isMac ? e.metaKey : e.ctrlKey;
+    const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+
+    if (cmd && e.key === "Enter") { e.preventDefault(); run(); return; }
+    if (cmd && e.key.toLowerCase() === "s") { e.preventDefault(); el.share.click(); return; }
+    if (cmd && e.key.toLowerCase() === "k") {
+      e.preventDefault(); showTab("tree"); el.search.focus(); el.search.select(); return;
+    }
+    if (e.key === "Escape" && document.activeElement === el.search) {
+      el.search.value = ""; state.filter = "";
+      if (state.parsed) renderTree(); else el.hits.textContent = "";
+      activeInput().focus();
+      return;
+    }
+    if (e.key === "?" && !typing) { e.preventDefault(); el.keys.showModal(); }
+  });
+
+  /* ── boot ────────────────────────────────────────── */
+
+  buildShortcuts();
+  applySplit(state.split);
+  el.splitter.setAttribute("aria-valuemin", "18");
+  el.splitter.setAttribute("aria-valuemax", "72");
+
+  (async () => {
+    const shared = await readShare(location.hash);
+    if (shared !== null) {
+      history.replaceState(null, "", location.pathname + location.search);
+      el.input.value = shared;
+      state.freshDoc = true;
+      syncGutter();
+      run();
+      toast("Loaded from a shared link");
+      el.input.focus();
+      return;
+    }
+
+    const record = restore();
+    syncGutter();
+    if (record && (el.input.value || el.inputB.value)) {
+      run();
+      if (record.view && record.view !== "tree") showTab(record.view);
+      toast(
+        record.dropped
+          ? "Settings restored — the payload was too large to keep"
+          : "Restored your last session",
+        { label:"Start fresh", run:() => { forget(); $("clear").click(); } },
+      );
+    }
+    el.input.focus();
+  })();
+})();
+</script>
+</body>
+</html>
